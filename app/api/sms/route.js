@@ -2,26 +2,29 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return new Response(JSON.stringify({ status: 'ok', proxy: 'HBG SMS Proxy Ready' }), {
+  return new Response(JSON.stringify({ ok: true, msg: 'HBG Proxy Ready - POST from,to,message' }), {
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
 }
 
 export async function POST(req) {
   try {
-    const { from, to, message } = await req.json();
+    const body = await req.json();
+    let { from, to, message } = body;
     
-    if (!process.env.ELKS_USERNAME || !process.env.ELKS_PASSWORD) {
-      return new Response(JSON.stringify({ error: 'Missing ELKS_USERNAME or ELKS_PASSWORD' }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
+    // 46elks test-konton kräver att from är ditt verifierade nummer
+    // Om du får 403 på HBG MX, testa med +46705347384
+    
+    const user = process.env.ELKS_USERNAME;
+    const pass = process.env.ELKS_PASSWORD;
+    
+    if (!user || !pass) {
+      return new Response(JSON.stringify({ error: 'Saknar ELKS_USERNAME/PASSWORD i Vercel env' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }});
     }
-
-    const credentials = `${process.env.ELKS_USERNAME}:${process.env.ELKS_PASSWORD}`;
-    const auth = Buffer.from(credentials).toString('base64');
     
-    const r = await fetch('https://api.46elks.com/a1/SMS', {
+    const auth = Buffer.from(`${user.trim()}:${pass.trim()}`).toString('base64');
+    
+    const resp = await fetch('https://api.46elks.com/a1/SMS', {
       method: 'POST',
       headers: {
         'Authorization': 'Basic ' + auth,
@@ -30,21 +33,19 @@ export async function POST(req) {
       body: new URLSearchParams({ from, to, message })
     });
     
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    const text = await resp.text();
     
-    return new Response(JSON.stringify(data), {
-      status: r.ok ? 200 : r.status,
+    // Returnera exakt vad 46elks säger
+    return new Response(text, {
+      status: resp.status,
       headers: { 
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Origin': '*'
       }
     });
+    
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({ proxy_error: e.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
